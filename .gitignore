@@ -33,6 +33,7 @@ env/
 ENV/
 .venv/
 .env/
+.python-version
 pip-log.txt
 pip-delete-this-directory.txt
 
@@ -60,11 +61,16 @@ target/
 .dmypy.json
 dmypy.json
 
+# Ruff / static analysis
+.ruff_cache/
+.pytype/
+
 # Pyre type checker
 .pyre/
 
 # VSCode
 .vscode/
+.idea/
 
 # MacOS
 .DS_Store
@@ -81,3 +87,5 @@ Desktop.ini
 *.local
 *.env
 .env.*
+.envrc
+.direnv/

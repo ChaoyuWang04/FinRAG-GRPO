@@ -1,0 +1,13 @@
+[project]
+name = "rm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "huggingface-hub>=1.7.1",
+    "hydra-core>=1.3.2",
+    "openai>=2.29.0",
+    "ray>=2.54.0",
+    "tdqm>=0.0.1",
+]
