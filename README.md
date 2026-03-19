@@ -1,242 +1,315 @@
-# FinRAG-GRPO
-
+<!-- PROJECT LOGO -->
+<br />
 <div align="center">
-  <h3 align="center">Reasoning Reward Model Training Workflow for Customer Service Preference Data</h3>
-  <p align="center">
-    This repository contains a practical RM-R1 style pipeline: generate pairwise customer-service preference data, preprocess and split it, train a reasoning reward model with GRPO on top of veRL/vLLM/Ray, and run inference with an exported checkpoint.
-    <br /><br />
-    <a href="https://github.com/ChaoyuWang04/FinRAG-GRPO">Repository</a> |
-  </p>
+  <a href="https://github.com/ChaoyuWang04/FinRAG-GRPO">
+    <img src="images/logo.jpg" alt="Logo" width="100" height="100">
+  </a>
+
+<h3 align="center">FinRAG-GRPO</h3>
+
+<p align="center">
+  A GRPO training pipeline for reasoning reward modeling on Chinese customer-service preference data.
+  <br /><br />
+  | <a href="https://huggingface.co/datasets/SamWang0405/FinRAG-GRPO">🤗 HuggingFace Dataset</a> |
+  <a href="https://github.com/ChaoyuWang04/FinRAG-GRPO/issues/new?labels=bug">Report Bug</a> |
+  <a href="https://github.com/ChaoyuWang04/FinRAG-GRPO/issues/new?labels=enhancement">Request Feature</a> |
+</p>
+
 </div>
 
+
+<!-- ABOUT THE PROJECT -->
 ## About The Project
 
-This repository implements a **Reasoning Reward Model (ReasRM)** workflow. Instead of directly predicting a scalar reward, the model is trained to behave like a reviewer: it reads a customer question plus two candidate answers, reasons about which answer is better, and finally emits a structured decision such as `<answer>[[A]]</answer>` or `<answer>[[B]]</answer>`.
+FinRAG-GRPO is an open-source training pipeline for **Reasoning Reward Models (ReasRM)** built around **GRPO** fine-tuning. Instead of directly predicting a scalar reward, the model is trained to first produce an explicit judging process and then output a final pairwise preference between two candidate responses.
 
-The current project is centered on a Chinese e-commerce customer-service use case. The training data compares a weaker, more mechanical answer with a better, more empathetic and solution-oriented answer. The training recipe skips a separate SFT stage and directly applies **GRPO / RLVR-style reinforcement learning** on a reasoning-capable base model.
+This repository currently focuses on **Chinese customer-service preference modeling**:
 
-At a high level, the workflow in this repository is:
+| Component | Description |
+|--------|-------|
+| Synthetic data generation | Multi-threaded generation of customer-service A/B preference data |
+| Data format | JSONL with `context_messages` and `winner` |
+| Task style | Pairwise preference judgment for customer-service answers |
+| Training method | GRPO / PPO-style RL training with veRL + Ray + vLLM |
+| Reward function | Rule-based match on the final `<answer>[[A/B]]</answer>` tag |
+| Inference demo | Hugging Face model loading and single-example evaluation |
+| Data files included | Raw shards, merged train/test, and `_with_sys` variants |
 
-1. Generate synthetic pairwise preference samples.
-2. Merge, shuffle, and split them into train/test JSONL files.
-3. Optionally inject a system prompt into every example.
-4. Launch GRPO training with veRL, Ray, and vLLM.
-5. Export the trained checkpoint and run inference with Transformers.
+The current workflow in this repo is:
+
+1. Generate synthetic customer-service preference samples.
+2. Merge and split them into train/test JSONL files.
+3. Optionally inject a Chinese system prompt for rubric-style judging.
+4. Train a reasoning reward model with GRPO.
+5. Export the FSDP checkpoint and run local inference.
+
 
 ### Built With
 
-- Python 3.11
-- [veRL](https://github.com/volcengine/verl)
-- [vLLM](https://github.com/vllm-project/vllm)
-- [Ray](https://github.com/ray-project/ray)
-- [PyTorch](https://pytorch.org/)
-- [Transformers](https://github.com/huggingface/transformers)
+[![Python][Python-badge]][Python-url]
+[![Ray][Ray-badge]][Ray-url]
+[![vLLM][vLLM-badge]][vLLM-url]
+[![Transformers][Transformers-badge]][Transformers-url]
+[![HuggingFace][HuggingFace-badge]][HuggingFace-url]
 
+
+
+<!-- GETTING STARTED -->
 ## Getting Started
-
-The repository does not currently ship a single `requirements.txt` or one-command bootstrap script. The expected setup is the same one described in [README_zh.md](./README_zh.md): create a Python environment, install pinned veRL and vLLM revisions, then run the local scripts after adapting paths to your machine.
 
 ### Prerequisites
 
-- Linux environment with NVIDIA GPUs
-- Python 3.11
-- Conda or another environment manager
-- CUDA-compatible PyTorch environment
-- A local base model checkpoint for training
-- veRL and vLLM installed from source
+- Python 3.11 recommended
+- Conda
+- CUDA-capable GPUs for training
+- [veRL](https://github.com/volcengine/verl) on a pinned commit
+- [vLLM](https://github.com/vllm-project/vllm) on a pinned commit
+- `flash-attn==2.7.2.post1` recommended for faster training
 
-### Environment Setup
+For the exact environment notes used in this repo, see `README_zh.md`.
 
-```sh
-conda create -n rm-r1 python=3.11 -y
-conda activate rm-r1
-```
+### Installation
 
-Install veRL at the revision referenced by the Chinese README:
+1. Clone the repo
+   ```sh
+   git clone https://github.com/ChaoyuWang04/FinRAG-GRPO.git
+   cd FinRAG-GRPO
+   ```
 
-```sh
-git clone https://github.com/volcengine/verl
-cd verl
-git checkout e49fb572bf85a8f0ef7124c898f509bd6d9832a1
-pip install -e .
-```
+2. Create a Python environment
+   ```sh
+   conda create -n rm-r1-1 python=3.11 -y
+   conda activate rm-r1-1
+   ```
 
-Install vLLM at the pinned revision used by this workflow:
+3. Install veRL at the pinned commit
+   ```sh
+   git clone https://github.com/volcengine/verl
+   cd verl
+   git checkout e49fb572bf85a8f0ef7124c898f509bd6d9832a1
+   pip install -e .
+   cd ..
+   ```
 
-```sh
-git clone https://github.com/vllm-project/vllm.git
-cd vllm
-git checkout ed6e9075d31e32c8548b480a47d1ffb77da1f54c
-git cherry-pick caac5c2e597b1780c3df54a537c34e6061c32cff
-export VLLM_COMMIT=ed6e9075d31e32c8548b480a47d1ffb77da1f54c
-export VLLM_PRECOMPILED_WHEEL_LOCATION=https://wheels.vllm.ai/ed6e9075d31e32c8548b480a47d1ffb77da1f54c/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl
-VLLM_USE_PRECOMPILED=1 pip install --editable .
-pip install flash-attn==2.7.2.post1 --no-build-isolation
-```
+4. Install vLLM at the pinned commit
+   ```sh
+   git clone https://github.com/vllm-project/vllm.git
+   cd vllm
+   git checkout ed6e9075d31e32c8548b480a47d1ffb77da1f54c
+   git cherry-pick caac5c2e597b1780c3df54a537c34e6061c32cff
+   export VLLM_COMMIT=ed6e9075d31e32c8548b480a47d1ffb77da1f54c
+   export VLLM_PRECOMPILED_WHEEL_LOCATION=https://wheels.vllm.ai/ed6e9075d31e32c8548b480a47d1ffb77da1f54c/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl
+   VLLM_USE_PRECOMPILED=1 pip install --editable .
+   cd ..
+   ```
 
-You will also need the common runtime libraries used by the helper scripts, for example:
+5. Install flash-attention
+   ```sh
+   pip install flash-attn==2.7.2.post1 --no-build-isolation
+   ```
 
-```sh
-pip install torch transformers tqdm
-```
+6. Verify project structure
+   ```
+   FinRAG-GRPO/
+   ├── demo/
+   │   ├── convert_fsdp_to_hf.py
+   │   ├── demo.ipynb
+   │   └── demo.py
+   ├── docs/
+   │   └── note.md
+   ├── images/
+   │   └── logo.jpg
+   ├── rm_r1/
+   │   ├── dataset/
+   │   │   └── mix_data/
+   │   │       ├── customer_service_dataset_*.jsonl
+   │   │       ├── train.jsonl
+   │   │       ├── test.jsonl
+   │   │       ├── train_with_sys.jsonl
+   │   │       ├── test_with_sys.jsonl
+   │   │       ├── preprocess_data.py
+   │   │       ├── chat_prompt_chinese.py
+   │   │       └── mix_data.py
+   │   ├── scripts/
+   │   │   └── RLVR/local/train_rm_r1_rlvr_dpsk_distilled_7b.sh
+   │   └── verl/
+   │       ├── trainer/
+   │       ├── utils/
+   │       └── workers/
+   ├── generate_customer_service_data.py
+   ├── merge_and_split_dataset.py
+   ├── README.md
+   ├── README_zh.md
+   └── LICENSE
+   ```
 
-### Repository Structure
 
-```text
-FinRAG-GRPO/
-├── README.md
-├── README_zh.md
-├── docs/note.md                               # Chinese technical walkthrough of the full pipeline
-├── generate_customer_service_data.py          # Synthetic pairwise data generation
-├── merge_and_split_dataset.py                 # Merge, shuffle, and split JSONL datasets
-├── demo/demo.py                               # Inference demo with an exported HF checkpoint
-├── demo/convert_fsdp_to_hf.py                 # Convert training output into HF-style weights
-└── rm_r1/
-    ├── dataset/mix_data/                      # Raw, merged, and system-prompted datasets
-    ├── scripts/RLVR/local/                    # Local GRPO training shell scripts
-    └── verl/                                  # Customized trainer, dataset, reward, and worker code
-```
 
+<!-- USAGE EXAMPLES -->
 ## Usage
 
-### 1. Generate synthetic preference data
+The current pipeline can be understood as four stages:
 
-`generate_customer_service_data.py` creates JSONL records in the format expected by the RM dataset loader:
+**Stage 1 - Generate synthetic customer-service preference data**
 
-- `context_messages`: a chat-style prompt containing the customer question and answers A/B
-- `winner`: `model_a` or `model_b`
-
-The script is designed for Chinese customer-service scenarios such as logistics delays, refunds, price disputes, address changes, and payment issues.
-
-Run it after providing your own `llm.call_llm(...)` implementation or equivalent local wrapper:
+`generate_customer_service_data.py` creates pairwise A/B samples for Chinese e-commerce customer-service scenarios.  
+Note: this script imports `call_llm` from a local `llm` module, which is not included in this repository, so you need to provide your own LLM wrapper before running it.
 
 ```sh
 python generate_customer_service_data.py
+# Output: customer_service_dataset.jsonl
 ```
 
-By default it:
+**Stage 2 - Merge and split dataset shards**
 
-- targets 3000 synthetic samples
-- uses multithreaded generation
-- writes `customer_service_dataset.jsonl`
-- randomizes A/B order to reduce position bias
-
-### 2. Merge and split datasets
-
-`merge_and_split_dataset.py` combines multiple JSONL files, shuffles them with a fixed seed, and writes train/test splits:
+`merge_and_split_dataset.py` merges the raw JSONL shards, shuffles them with a fixed seed, and writes the final training and test sets.
 
 ```sh
 python merge_and_split_dataset.py
+# Output:
+#   rm_r1/dataset/mix_data/train.jsonl
+#   rm_r1/dataset/mix_data/test.jsonl
 ```
 
-Default outputs:
+**Stage 3 - Inject the system prompt**
 
-- `rm_r1/dataset/mix_data/train.jsonl`
-- `rm_r1/dataset/mix_data/test.jsonl`
-
-### 3. Inject the system prompt
-
-If you want every training example to begin with the Chinese rubric/system prompt, run:
+`preprocess_data.py` prepends the Chinese judging prompt to each sample and produces `_with_sys` variants for training and evaluation.
 
 ```sh
 cd rm_r1/dataset/mix_data
 python preprocess_data.py
+# Output:
+#   train_with_sys.jsonl
+#   test_with_sys.jsonl
 ```
 
-This creates:
+**Stage 4 - Launch GRPO training**
 
-- `train_with_sys.jsonl`
-- `test_with_sys.jsonl`
-
-### 4. Launch GRPO training
-
-The main local training entrypoint is:
+The training entrypoint is:
 
 ```sh
 bash ./rm_r1/scripts/RLVR/local/train_rm_r1_rlvr_dpsk_distilled_7b.sh
 ```
 
-The training script:
+The script configures:
 
-- configures Ray and GPU usage
-- points veRL to the train/validation JSONL files
-- loads a base reasoning model
-- uses `rm_r1/verl/utils/reward_score/lm_as_judge.py` as the reward function
-- starts PPO/GRPO-style optimization through `rm_r1.verl.trainer.main_ppo`
+- Ray startup and teardown
+- model path and save path
+- GRPO batch sizes and token limits
+- custom reward loading from `rm_r1/verl/utils/reward_score/lm_as_judge.py`
+- local JSONL train/validation files
 
-Important: the script currently contains **machine-specific absolute paths** such as `/root/autodl-tmp/...`. You should update at least the following before running it:
+Before running it, you will likely want to update the hard-coded paths inside the script, such as:
 
 - `MODEL_PATH`
 - `SAVE_META_DIR`
 - `TRAIN_TASK`
 - `EVAL_TASK`
 
-### 5. Export and run inference
-
-After training, the repository includes a simple conversion and demo path:
+**Optional - Convert FSDP checkpoints to a Hugging Face model**
 
 ```sh
 python demo/convert_fsdp_to_hf.py
+```
+
+**Optional - Run the local inference demo**
+
+```sh
 python demo/demo.py
 ```
 
-`demo/demo.py` loads the merged model with Transformers, formats a single A/B evaluation prompt, and prints the model's final judgment.
 
-## How The Training Loop Works
 
-The main logic in this repository is:
-
-1. `rm_r1/verl/utils/dataset/rl_dataset.py` reads JSONL preference samples.
-2. The prompt is formatted with a chat template and sent to the policy model.
-3. The model generates reasoning text plus a final `<answer>[[A/B]]</answer>` decision.
-4. `rm_r1/verl/utils/reward_score/lm_as_judge.py` checks whether the predicted final tag matches the ground-truth winner.
-5. GRPO/PPO updates are applied through the customized veRL trainer code under `rm_r1/verl/`.
-
-This makes the project a compact prototype for training a reasoning-style reward model rather than a standard scalar reward head.
-
-## Current Caveats
-
-- Several scripts are tightly coupled to one local environment and need path cleanup before reuse.
-- `generate_customer_service_data.py` depends on `from llm import call_llm`, but that helper is not included in this repository.
-- The training shell script currently sets `EVAL_TASK` to the training set path by default.
-- `demo/convert_fsdp_to_hf.py` uses a simplified merge approach and explicitly notes that it is not a full FSDP state-dict gather implementation.
-- There is no unified dependency lockfile or end-to-end reproducible bootstrap script yet.
-
+<!-- ROADMAP -->
 ## Roadmap
 
-- [x] Synthetic pairwise customer-service preference data generation
-- [x] JSONL merge/split preprocessing workflow
-- [x] Optional system-prompt injection for rubric-style training
-- [x] GRPO training entrypoint based on veRL, Ray, and vLLM
-- [x] Checkpoint export and inference demo
-- [ ] Replace machine-specific paths with configurable project-relative paths
-- [ ] Add a proper dependency file and reproducible environment setup
-- [ ] Improve reward shaping beyond final-tag matching
-- [ ] Add a clearer evaluation pipeline and model card outputs
+- [x] Synthetic Chinese customer-service pairwise preference data generation
+- [x] Merge-and-split pipeline for JSONL reward-model data
+- [x] Chinese rubric-style system prompt injection
+- [x] Custom GRPO training entry based on veRL + Ray + vLLM
+- [x] Rule-based reward matching for final A/B judgment tags
+- [x] Local demo for checkpoint export and inference
+- [ ] Replace hard-coded training paths with configurable arguments
+- [ ] Use the `_with_sys.jsonl` files consistently in training and evaluation
+- [ ] Improve the reward from sparse final-tag matching to denser structured scoring
+- [ ] Add a cleaner evaluation pipeline and fixed benchmark split
+- [ ] Improve FSDP checkpoint merging beyond the current rank-0-only shortcut
 
+See the [open issues](https://github.com/ChaoyuWang04/FinRAG-GRPO/issues) for a full list of proposed features and known issues.
+
+
+
+<!-- CONTRIBUTING -->
 ## Contributing
 
-Contributions are welcome, especially in the following areas:
+Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
 
-- environment reproducibility
-- training/evaluation cleanup
-- reward function improvements
-- dataset governance and quality checks
-- documentation
+If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
+Don't forget to give the project a star! Thanks again!
 
-Typical flow:
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-1. Fork the repository.
-2. Create a branch.
-3. Make your changes.
-4. Open a pull request with a clear description of the change and how it was validated.
 
+
+### Top contributors:
+
+<a href="https://github.com/ChaoyuWang04/FinRAG-GRPO/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=ChaoyuWang04/FinRAG-GRPO" alt="contrib.rocks image" />
+</a>
+
+<!-- LICENSE -->
 ## License
 
-Distributed under the MIT License. See [LICENSE](./LICENSE) for details.
+Distributed under the MIT License. See `LICENSE` for more information.
 
+
+
+<!-- CONTACT -->
 ## Contact
 
-Chaoyu Wang  
-[LinkedIn](https://www.linkedin.com/in/samwang04/)  
-[Personal Website](https://chaoyuwang04.github.io/)
+Chaoyu Wang - [Linkedin](https://www.linkedin.com/in/samwang04/) - [PersonalWeb](https://chaoyuwang04.github.io/)
+
+Project Link: [https://github.com/ChaoyuWang04/FinRAG-GRPO](https://github.com/ChaoyuWang04/FinRAG-GRPO)
+
+Dataset Link: [https://huggingface.co/datasets/SamWang0405/FinRAG-GRPO](https://huggingface.co/datasets/SamWang0405/FinRAG-GRPO)
+
+
+
+<!-- ACKNOWLEDGMENTS -->
+## Acknowledgments
+
+* [veRL](https://github.com/volcengine/verl) - training framework foundation
+* [vLLM](https://github.com/vllm-project/vllm) - rollout and inference backend
+* [Transformers](https://github.com/huggingface/transformers) - model loading and export utilities
+* [Best-README-Template](https://github.com/othneildrew/Best-README-Template) - README structure
+
+
+
+<!-- MARKDOWN LINKS & IMAGES -->
+[contributors-shield]: https://img.shields.io/github/contributors/ChaoyuWang04/FinRAG-GRPO.svg?style=for-the-badge
+[contributors-url]: https://github.com/ChaoyuWang04/FinRAG-GRPO/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/ChaoyuWang04/FinRAG-GRPO.svg?style=for-the-badge
+[forks-url]: https://github.com/ChaoyuWang04/FinRAG-GRPO/network/members
+[stars-shield]: https://img.shields.io/github/stars/ChaoyuWang04/FinRAG-GRPO.svg?style=for-the-badge
+[stars-url]: https://github.com/ChaoyuWang04/FinRAG-GRPO/stargazers
+[issues-shield]: https://img.shields.io/github/issues/ChaoyuWang04/FinRAG-GRPO.svg?style=for-the-badge
+[issues-url]: https://github.com/ChaoyuWang04/FinRAG-GRPO/issues
+[license-shield]: https://img.shields.io/github/license/ChaoyuWang04/FinRAG-GRPO.svg?style=for-the-badge
+[license-url]: https://github.com/ChaoyuWang04/FinRAG-GRPO/blob/master/LICENSE
+[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
+[linkedin-url]: https://www.linkedin.com/in/samwang04/
+
+[Python-badge]: https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white
+[Python-url]: https://www.python.org/
+[Ray-badge]: https://img.shields.io/badge/Ray-028CF0?style=for-the-badge&logo=ray&logoColor=white
+[Ray-url]: https://www.ray.io/
+[vLLM-badge]: https://img.shields.io/badge/vLLM-111111?style=for-the-badge
+[vLLM-url]: https://github.com/vllm-project/vllm
+[Transformers-badge]: https://img.shields.io/badge/Transformers-FFBF00?style=for-the-badge
+[Transformers-url]: https://huggingface.co/docs/transformers
+[HuggingFace-badge]: https://img.shields.io/badge/🤗%20HuggingFace-FFD21E?style=for-the-badge
+[HuggingFace-url]: https://huggingface.co/
