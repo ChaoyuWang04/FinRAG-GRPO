@@ -224,9 +224,9 @@ def main_task(config):
         role_worker_mapping=role_worker_mapping,
         resource_pool_manager=resource_pool_manager,
         ray_worker_group_cls=ray_worker_group_cls,
-        reward_fn=reward_fn,
-        val_reward_fn=val_reward_fn,
     )
+    trainer.reward_fn = reward_fn
+    trainer.val_reward_fn = val_reward_fn
 
     # --- 8. 启动训练 ---
     trainer.init_workers() # 初始化所有 Ray Worker 进程

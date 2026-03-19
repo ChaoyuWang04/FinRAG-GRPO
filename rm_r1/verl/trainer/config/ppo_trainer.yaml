@@ -102,6 +102,7 @@ actor_rollout_ref:
       do_sample: False # default eager for validation
 
 critic:
+  enable: null
   strategy: fsdp
   optim:
     lr: 1e-5
@@ -167,11 +168,13 @@ algorithm:
   lam: 1.0
   adv_estimator: grpo
   kl_penalty: kl  # how to estimate kl divergence
+  use_kl_in_reward: false
   kl_ctrl:
     type: fixed
     kl_coef: 0.0
 
 trainer:
+  device: cuda
   balance_batch: True
   val_before_train: False
   total_epochs: 10
@@ -192,3 +195,8 @@ trainer:
   remove_previous_ckpt_in_save: False
   del_local_ckpt_after_load: False
   default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
+
+# 新版 veRL 要求的 reward 结构
+reward:
+  reward_model:
+    enable: false
