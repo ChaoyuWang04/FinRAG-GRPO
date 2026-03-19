@@ -1,295 +1,242 @@
-# AdCampaignAgent-SFT
+# FinRAG-GRPO
 
-<!-- PROJECT SHIELDS -->
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![MIT License][license-shield]][license-url]
-[![LinkedIn][linkedin-shield]][linkedin-url]
-
-<!-- PROJECT LOGO -->
-<br />
 <div align="center">
-  <a href="https://github.com/ChaoyuWang04/FinRAG-GRPO">
-    <img src="images/logo.jpg" alt="Logo" width="100" height="100">
-  </a>
-
-<h3 align="center">AdCampaignAgent-SFT</h3>
-
+  <h3 align="center">Reasoning Reward Model Training Workflow for Customer Service Preference Data</h3>
   <p align="center">
-    A rule-based synthetic SFT dataset for training tool-calling agents in mobile game user acquisition (UA) — grounded in real ad operations, ROAS/Retention safety baselines, and multi-turn reasoning chains.
-    <br />
-    <a href="https://github.com/ChaoyuWang04/AdCampaignAgent-SFT"><strong>Explore the docs »</strong></a>
-    <br />
-    <br />
-    <a href="https://huggingface.co/datasets/SamWang0405/AdCampaignAgent-SFT">🤗 HuggingFace Dataset</a>
-    &middot;
-    <a href="https://github.com/ChaoyuWang04/AdCampaignAgent-SFT/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
-    &middot;
-    <a href="https://github.com/ChaoyuWang04/AdCampaignAgent-SFT/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+    This repository contains a practical RM-R1 style pipeline: generate pairwise customer-service preference data, preprocess and split it, train a reasoning reward model with GRPO on top of veRL/vLLM/Ray, and run inference with an exported checkpoint.
+    <br /><br />
+    <a href="https://github.com/ChaoyuWang04/FinRAG-GRPO">Repository</a> |
   </p>
 </div>
 
-<!-- TABLE OF CONTENTS -->
-<details>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#about-the-project">About The Project</a>
-      <ul>
-        <li><a href="#built-with">Built With</a></li>
-      </ul>
-    </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
-      </ul>
-    </li>
-    <li><a href="#usage">Usage</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#license">License</a></li>
-    <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
-  </ol>
-</details>
-
-<!-- ABOUT THE PROJECT -->
 ## About The Project
 
-AdCampaignAgent-SFT is an open-source pipeline for generating high-quality **Supervised Fine-Tuning (SFT)** datasets targeting LLM-based tool-calling agents in the mobile game advertising domain. It produces structured multi-turn dialogues that reflect real UA (User Acquisition) workflows — from campaign performance analysis to creative asset uploads — grounded in business-realistic ROAS and Retention safety baselines.
+This repository implements a **Reasoning Reward Model (ReasRM)** workflow. Instead of directly predicting a scalar reward, the model is trained to behave like a reviewer: it reads a customer question plus two candidate answers, reasons about which answer is better, and finally emits a structured decision such as `<answer>[[A]]</answer>` or `<answer>[[B]]</answer>`.
 
-**Dataset highlights (`AdCampaignAgent-SFT`):**
+The current project is centered on a Chinese e-commerce customer-service use case. The training data compares a weaker, more mechanical answer with a better, more empathetic and solution-oriented answer. The training recipe skips a separate SFT stage and directly applies **GRPO / RLVR-style reinforcement learning** on a reasoning-capable base model.
 
-| Metric | Value |
-|--------|-------|
-| Total conversations | 1,000 |
-| Format | OpenAI Messages (`role` / `content` / `tool_calls` / `tool_call_id`) |
-| Unique tools | 15 |
-| Distinct scene tags | 22 |
-| Platforms covered | Google UAC · Meta · TikTok · AppLovin · Unity |
-| Game genres | Casual · Puzzle · Hyper-casual · RPG · Strategy |
-| Avg turns / conversation | 7.2 messages |
-| With tool calls | 900 (90.0%) |
-| With clarification turns | 96 (9.6%) |
-| Refusal conversations | 100 (10.0%) |
-| Format errors | ✅ 0 — clean |
+At a high level, the workflow in this repository is:
 
-The generation pipeline is fully **rule-based** — no LLM API calls required. Each conversation is constructed from a seed record (workflow type, scene tag, ROAS/Retention baselines) through deterministic mock tool execution, ensuring internal data consistency across all tool results within a single dialogue.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+1. Generate synthetic pairwise preference samples.
+2. Merge, shuffle, and split them into train/test JSONL files.
+3. Optionally inject a system prompt into every example.
+4. Launch GRPO training with veRL, Ray, and vLLM.
+5. Export the trained checkpoint and run inference with Transformers.
 
 ### Built With
 
-[![Python][Python-badge]][Python-url]
-[![HuggingFace][HuggingFace-badge]][HuggingFace-url]
-[![Pandas][Pandas-badge]][Pandas-url]
-[![Matplotlib][Matplotlib-badge]][Matplotlib-url]
-[![Seaborn][Seaborn-badge]][Seaborn-url]
+- Python 3.11
+- [veRL](https://github.com/volcengine/verl)
+- [vLLM](https://github.com/vllm-project/vllm)
+- [Ray](https://github.com/ray-project/ray)
+- [PyTorch](https://pytorch.org/)
+- [Transformers](https://github.com/huggingface/transformers)
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-<!-- GETTING STARTED -->
 ## Getting Started
+
+The repository does not currently ship a single `requirements.txt` or one-command bootstrap script. The expected setup is the same one described in [README_zh.md](./README_zh.md): create a Python environment, install pinned veRL and vLLM revisions, then run the local scripts after adapting paths to your machine.
 
 ### Prerequisites
 
-- Python 3.10+
-- pip
+- Linux environment with NVIDIA GPUs
+- Python 3.11
+- Conda or another environment manager
+- CUDA-compatible PyTorch environment
+- A local base model checkpoint for training
+- veRL and vLLM installed from source
+
+### Environment Setup
 
 ```sh
-pip install matplotlib seaborn pandas tqdm
+conda create -n rm-r1 python=3.11 -y
+conda activate rm-r1
 ```
 
-### Installation
+Install veRL at the revision referenced by the Chinese README:
 
-1. Clone the repo
-   ```sh
-   git clone https://github.com/ChaoyuWang04/AdCampaignAgent-SFT.git
-   cd AdCampaignAgent-SFT
-   ```
+```sh
+git clone https://github.com/volcengine/verl
+cd verl
+git checkout e49fb572bf85a8f0ef7124c898f509bd6d9832a1
+pip install -e .
+```
 
-2. Install dependencies
-   ```sh
-   pip install -r requirements.txt
-   ```
+Install vLLM at the pinned revision used by this workflow:
 
-3. Verify project structure
-   ```
-   AdCampaignAgent-SFT/
-   ├── checker/               # auto-generated quality reports and figures
-   │   ├── ad_agent_sft_*_cn_message/
-   │   └── ad_agent_sft_*_cn_sharegpt/
-   ├── data/                  # generated seeds and SFT datasets
-   │   ├── ad_agent_seeds_*_cn.json
-   │   ├── ad_agent_sft_*_cn_message.json
-   │   └── ad_agent_sft_*_cn_sharegpt.json
-   ├── docs/
-   │   └── 0_Summary.md
-   ├── images/
-   │   ├── logo.png
-   │   └── screenshot.png
-   ├── src/
-   │   ├── 1.1_ad_gen_data_cn.py
-   │   ├── 1.2_ad_gen_data_en.py
-   │   ├── 2.1_convert_dataset_sharegpt_cn.py
-   │   ├── 2.2_convert_dataset_sharegpt_en.py
-   │   ├── 2.3_convert_data_message_cn.py
-   │   ├── 2.4_convert_data_message_en.py
-   │   └── 3_dataquality_check.py
-   ├── tools/
-   │   └── 0_all_tools.json
-   ├── LICENSE
-   └── README.md
-   ```
+```sh
+git clone https://github.com/vllm-project/vllm.git
+cd vllm
+git checkout ed6e9075d31e32c8548b480a47d1ffb77da1f54c
+git cherry-pick caac5c2e597b1780c3df54a537c34e6061c32cff
+export VLLM_COMMIT=ed6e9075d31e32c8548b480a47d1ffb77da1f54c
+export VLLM_PRECOMPILED_WHEEL_LOCATION=https://wheels.vllm.ai/ed6e9075d31e32c8548b480a47d1ffb77da1f54c/vllm-1.0.0.dev-cp38-abi3-manylinux1_x86_64.whl
+VLLM_USE_PRECOMPILED=1 pip install --editable .
+pip install flash-attn==2.7.2.post1 --no-build-isolation
+```
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+You will also need the common runtime libraries used by the helper scripts, for example:
 
-<!-- USAGE EXAMPLES -->
+```sh
+pip install torch transformers tqdm
+```
+
+### Repository Structure
+
+```text
+FinRAG-GRPO/
+├── README.md
+├── README_zh.md
+├── docs/note.md                               # Chinese technical walkthrough of the full pipeline
+├── generate_customer_service_data.py          # Synthetic pairwise data generation
+├── merge_and_split_dataset.py                 # Merge, shuffle, and split JSONL datasets
+├── demo/demo.py                               # Inference demo with an exported HF checkpoint
+├── demo/convert_fsdp_to_hf.py                 # Convert training output into HF-style weights
+└── rm_r1/
+    ├── dataset/mix_data/                      # Raw, merged, and system-prompted datasets
+    ├── scripts/RLVR/local/                    # Local GRPO training shell scripts
+    └── verl/                                  # Customized trainer, dataset, reward, and worker code
+```
+
 ## Usage
 
-The pipeline runs in three sequential stages:
+### 1. Generate synthetic preference data
 
-**Stage 1 — Generate seed records**
+`generate_customer_service_data.py` creates JSONL records in the format expected by the RM dataset loader:
 
-Produces 1,000 structured seed records covering 7 workflows and 22 scene tags, with pre-computed ROAS/Retention baselines per platform × genre.
+- `context_messages`: a chat-style prompt containing the customer question and answers A/B
+- `winner`: `model_a` or `model_b`
 
-```sh
-python src/1_ad_gen_data.py
-# Output: data/ad_agent_seeds_<timestamp>.json
-```
+The script is designed for Chinese customer-service scenarios such as logistics delays, refunds, price disputes, address changes, and payment issues.
 
-**Stage 2 — Generate conversations**
-
-Converts each seed into a full multi-turn dialogue in OpenAI Messages format. Tool results are mock-generated deterministically from the seed's `scene_tag` and baselines, ensuring all metrics within a single conversation are internally consistent.
+Run it after providing your own `llm.call_llm(...)` implementation or equivalent local wrapper:
 
 ```sh
-python src/2_ad_gen_conversation.py data/ad_agent_seeds_<timestamp>.json data/ad_agent_sft_<timestamp>.json
-# Output: data/ad_agent_sft_<timestamp>.json
+python generate_customer_service_data.py
 ```
 
-**Stage 3 — Quality analysis & report**
+By default it:
 
-Auto-detects format (OpenAI Messages or ShareGPT), runs full quality checks, generates 6 figures and a `dataset_card.md` ready for HuggingFace upload.
+- targets 3000 synthetic samples
+- uses multithreaded generation
+- writes `customer_service_dataset.jsonl`
+- randomizes A/B order to reduce position bias
+
+### 2. Merge and split datasets
+
+`merge_and_split_dataset.py` combines multiple JSONL files, shuffles them with a fixed seed, and writes train/test splits:
 
 ```sh
-python src/3_analyze_dataset.py
-# Input JSON file name: ad_agent_sft_<timestamp>.json
-# Output: checker/ad_agent_sft_<timestamp>/
-#           ├── dataset_card.md
-#           ├── fig1_workflow.png
-#           ├── fig2_scene.png
-#           ├── fig3_turn_dist.png
-#           ├── fig4_token_dist.png
-#           ├── fig5_tool_freq.png
-#           └── fig6_platform_genre.png
+python merge_and_split_dataset.py
 ```
 
-**Quick format validation (no full report)**
+Default outputs:
+
+- `rm_r1/dataset/mix_data/train.jsonl`
+- `rm_r1/dataset/mix_data/test.jsonl`
+
+### 3. Inject the system prompt
+
+If you want every training example to begin with the Chinese rubric/system prompt, run:
 
 ```sh
-python -c "
-import json
-data = json.load(open('data/ad_agent_sft_<timestamp>.json'))
-sample = data[50]['messages']
-for m in sample:
-    print(f\"{m['role']:12} | tool_calls={'tool_calls' in m} | tool_call_id={'tool_call_id' in m}\")
-"
+cd rm_r1/dataset/mix_data
+python preprocess_data.py
 ```
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+This creates:
 
-<!-- ROADMAP -->
+- `train_with_sys.jsonl`
+- `test_with_sys.jsonl`
+
+### 4. Launch GRPO training
+
+The main local training entrypoint is:
+
+```sh
+bash ./rm_r1/scripts/RLVR/local/train_rm_r1_rlvr_dpsk_distilled_7b.sh
+```
+
+The training script:
+
+- configures Ray and GPU usage
+- points veRL to the train/validation JSONL files
+- loads a base reasoning model
+- uses `rm_r1/verl/utils/reward_score/lm_as_judge.py` as the reward function
+- starts PPO/GRPO-style optimization through `rm_r1.verl.trainer.main_ppo`
+
+Important: the script currently contains **machine-specific absolute paths** such as `/root/autodl-tmp/...`. You should update at least the following before running it:
+
+- `MODEL_PATH`
+- `SAVE_META_DIR`
+- `TRAIN_TASK`
+- `EVAL_TASK`
+
+### 5. Export and run inference
+
+After training, the repository includes a simple conversion and demo path:
+
+```sh
+python demo/convert_fsdp_to_hf.py
+python demo/demo.py
+```
+
+`demo/demo.py` loads the merged model with Transformers, formats a single A/B evaluation prompt, and prints the model's final judgment.
+
+## How The Training Loop Works
+
+The main logic in this repository is:
+
+1. `rm_r1/verl/utils/dataset/rl_dataset.py` reads JSONL preference samples.
+2. The prompt is formatted with a chat template and sent to the policy model.
+3. The model generates reasoning text plus a final `<answer>[[A/B]]</answer>` decision.
+4. `rm_r1/verl/utils/reward_score/lm_as_judge.py` checks whether the predicted final tag matches the ground-truth winner.
+5. GRPO/PPO updates are applied through the customized veRL trainer code under `rm_r1/verl/`.
+
+This makes the project a compact prototype for training a reasoning-style reward model rather than a standard scalar reward head.
+
+## Current Caveats
+
+- Several scripts are tightly coupled to one local environment and need path cleanup before reuse.
+- `generate_customer_service_data.py` depends on `from llm import call_llm`, but that helper is not included in this repository.
+- The training shell script currently sets `EVAL_TASK` to the training set path by default.
+- `demo/convert_fsdp_to_hf.py` uses a simplified merge approach and explicitly notes that it is not a full FSDP state-dict gather implementation.
+- There is no unified dependency lockfile or end-to-end reproducible bootstrap script yet.
+
 ## Roadmap
 
-- [x] 7-workflow seed generation with rule-based scene tagging
-- [x] 15-tool mock executor with internally consistent ROAS/Retention metrics
-- [x] OpenAI Messages format with strict `tool_call_id` pairing
-- [x] Auto-format detection (OpenAI Messages / ShareGPT)
-- [x] Automated quality report with 6 figures + Markdown dataset card
-- [ ] Increase `validate_fail` scenes from 17 → 50+ samples
-- [ ] Add `tool_call` last-turn samples (~20 conversations)
-- [ ] Balance `industry_benchmark` and `platform_policy` knowledge scenes to 40+ each
-- [ ] Extend to English-only and bilingual variants
-- [ ] Fine-tuned model checkpoint (Qwen3-0.6B on AdCampaignAgent-SFT)
+- [x] Synthetic pairwise customer-service preference data generation
+- [x] JSONL merge/split preprocessing workflow
+- [x] Optional system-prompt injection for rubric-style training
+- [x] GRPO training entrypoint based on veRL, Ray, and vLLM
+- [x] Checkpoint export and inference demo
+- [ ] Replace machine-specific paths with configurable project-relative paths
+- [ ] Add a proper dependency file and reproducible environment setup
+- [ ] Improve reward shaping beyond final-tag matching
+- [ ] Add a clearer evaluation pipeline and model card outputs
 
-See the [open issues](https://github.com/ChaoyuWang04/AdCampaignAgent-SFT/issues) for a full list of proposed features and known issues.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-<!-- CONTRIBUTING -->
 ## Contributing
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Contributions are welcome, especially in the following areas:
 
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
-Don't forget to give the project a star! Thanks again!
+- environment reproducibility
+- training/evaluation cleanup
+- reward function improvements
+- dataset governance and quality checks
+- documentation
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+Typical flow:
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+1. Fork the repository.
+2. Create a branch.
+3. Make your changes.
+4. Open a pull request with a clear description of the change and how it was validated.
 
-### Top contributors:
-
-<a href="https://github.com/ChaoyuWang04/AdCampaignAgent-SFT/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=ChaoyuWang04/AdCampaignAgent-SFT" alt="contrib.rocks image" />
-</a>
-
-<!-- LICENSE -->
 ## License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+Distributed under the MIT License. See [LICENSE](./LICENSE) for details.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-<!-- CONTACT -->
 ## Contact
 
-Chaoyu Wang - [![LinkedIn][linkedin-shield]][linkedin-url] - [GitHub](https://github.com/ChaoyuWang04)
-
-Project Link: [https://github.com/ChaoyuWang04/AdCampaignAgent-SFT](https://github.com/ChaoyuWang04/AdCampaignAgent-SFT)
-
-Dataset Link: [https://huggingface.co/datasets/SamWang0405/AdCampaignAgent-SFT](https://huggingface.co/datasets/SamWang0405/AdCampaignAgent-SFT)
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-<!-- ACKNOWLEDGMENTS -->
-## Acknowledgments
-
-* [LLaMA Factory](https://github.com/hiyouga/LLaMA-Factory) — SFT training framework reference
-* [Qwen3](https://huggingface.co/Qwen) — base model for fine-tuning experiments
-* [Best-README-Template](https://github.com/othneildrew/Best-README-Template) — README structure
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-<!-- MARKDOWN LINKS & IMAGES -->
-[contributors-shield]: https://img.shields.io/github/contributors/ChaoyuWang04/AdCampaignAgent-SFT.svg?style=for-the-badge
-[contributors-url]: https://github.com/ChaoyuWang04/AdCampaignAgent-SFT/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/ChaoyuWang04/AdCampaignAgent-SFT.svg?style=for-the-badge
-[forks-url]: https://github.com/ChaoyuWang04/AdCampaignAgent-SFT/network/members
-[stars-shield]: https://img.shields.io/github/stars/ChaoyuWang04/AdCampaignAgent-SFT.svg?style=for-the-badge
-[stars-url]: https://github.com/ChaoyuWang04/AdCampaignAgent-SFT/stargazers
-[issues-shield]: https://img.shields.io/github/issues/ChaoyuWang04/AdCampaignAgent-SFT.svg?style=for-the-badge
-[issues-url]: https://github.com/ChaoyuWang04/AdCampaignAgent-SFT/issues
-[license-shield]: https://img.shields.io/github/license/ChaoyuWang04/AdCampaignAgent-SFT.svg?style=for-the-badge
-[license-url]: https://github.com/ChaoyuWang04/AdCampaignAgent-SFT/blob/master/LICENSE
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
-[linkedin-url]: https://www.linkedin.com/in/samwang04/
-
-[Python-badge]: https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white
-[Python-url]: https://www.python.org/
-[HuggingFace-badge]: https://img.shields.io/badge/🤗%20HuggingFace-FFD21E?style=for-the-badge
-[HuggingFace-url]: https://huggingface.co/
-[Pandas-badge]: https://img.shields.io/badge/Pandas-150458?style=for-the-badge&logo=pandas&logoColor=white
-[Pandas-url]: https://pandas.pydata.org/
-[Matplotlib-badge]: https://img.shields.io/badge/Matplotlib-11557C?style=for-the-badge&logo=python&logoColor=white
-[Matplotlib-url]: https://matplotlib.org/
-[Seaborn-badge]: https://img.shields.io/badge/Seaborn-4C72B0?style=for-the-badge&logo=python&logoColor=white
-[Seaborn-url]: https://seaborn.pydata.org/
+Chaoyu Wang  
+[LinkedIn](https://www.linkedin.com/in/samwang04/)  
+[Personal Website](https://chaoyuwang04.github.io/)
